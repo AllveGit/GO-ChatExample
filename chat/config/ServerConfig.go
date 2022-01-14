@@ -1,0 +1,8 @@
+package config
+
+const (
+	SERVER_IP          = "127.0.0.1:9999"
+	SERVER_MAX_USERNUM = 64
+	PACKET_HEADERSIZE  = 4
+	PACKET_MAX_BUFFER  = 4096
+)
