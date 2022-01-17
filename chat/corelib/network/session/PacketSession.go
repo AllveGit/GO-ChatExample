@@ -10,19 +10,21 @@ import (
 )
 
 type PacketSession struct {
-	id         int
-	conn       net.Conn
-	isShutdown bool
-	sendChan   chan MessagePacket
-	recvChan   chan MessagePacket
+	id             int
+	conn           net.Conn
+	isShutdown     bool
+	sendChan       chan MessagePacket
+	recvChan       chan MessagePacket
+	SessionManager ISessionManager
 }
 
 func NewPacketSession(InID int, InConn net.Conn) (*PacketSession, error) {
 	session := &PacketSession{
-		id:       InID,
-		conn:     InConn,
-		sendChan: make(chan MessagePacket),
-		recvChan: make(chan MessagePacket),
+		id:             InID,
+		conn:           InConn,
+		sendChan:       make(chan MessagePacket),
+		recvChan:       make(chan MessagePacket),
+		SessionManager: nil,
 	}
 
 	// PacketEvent Bind!
@@ -61,6 +63,10 @@ func (self *PacketSession) startPacketEvent() {
 			self.conn.Write(sendBytes)
 		case recvPkt := <-self.recvChan:
 			logger.Text(recvPkt.Message)
+
+			if self.SessionManager != nil {
+				self.SessionManager.BroadCast(self.id, recvPkt)
+			}
 		}
 	}
 }
@@ -117,7 +123,6 @@ func (self *PacketSession) startReceive() {
 		}
 
 		self.recvChan <- recvPacket
-
 		clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 	}
 }

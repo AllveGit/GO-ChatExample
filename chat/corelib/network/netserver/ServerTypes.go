@@ -3,6 +3,7 @@ package netserver
 import (
 	"chat/corelib/logger"
 	"chat/corelib/network"
+	. "chat/corelib/network/session"
 	"net"
 	"os"
 	"os/signal"
@@ -40,6 +41,8 @@ func (self *ChatServer) Run() {
 	logger.Text("Accept Start!")
 
 	go func() {
+		sessionManager := NewSessionManager()
+
 		for {
 			conn, acceptErr := listener.Accept()
 			if acceptErr != nil {
@@ -49,6 +52,12 @@ func (self *ChatServer) Run() {
 
 			go func(InConn net.Conn) {
 				logger.Text("accepted new connect from %s", conn.RemoteAddr().String())
+
+				_, newSessionErr := sessionManager.GenerateSession(InConn)
+				if newSessionErr != nil {
+					logger.Error(newSessionErr.Error())
+					return
+				}
 			}(conn)
 		}
 	}()
