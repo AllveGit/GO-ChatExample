@@ -39,6 +39,15 @@ func (self *PacketSession) Send(InPacket MessagePacket) error {
 	return nil
 }
 
+func (self *PacketSession) Shutdown() {
+	if self.conn != nil {
+		disconnectErr := self.conn.Close()
+		if disconnectErr != nil {
+			logger.Error(disconnectErr.Error())
+		}
+	}
+}
+
 func (self *PacketSession) startPacketEvent() {
 	for {
 		select {
