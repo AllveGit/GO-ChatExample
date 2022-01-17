@@ -6,6 +6,7 @@ import (
 	. "chat/corelib/network"
 	. "chat/types"
 	"encoding/json"
+	"io"
 	"net"
 )
 
@@ -22,8 +23,9 @@ func NewPacketSession(InID int, InConn net.Conn) (*PacketSession, error) {
 	session := &PacketSession{
 		id:             InID,
 		conn:           InConn,
-		sendChan:       make(chan MessagePacket),
-		recvChan:       make(chan MessagePacket),
+		isShutdown:     false,
+		sendChan:       make(chan MessagePacket, 10),
+		recvChan:       make(chan MessagePacket, 10),
 		SessionManager: nil,
 	}
 
@@ -84,12 +86,22 @@ func (self *PacketSession) startReceive() {
 	for !self.isShutdown {
 		curReadSize, readErr := self.conn.Read(recvBuffer[readSize:])
 		if readErr != nil {
+			if readErr == io.EOF {
+				logger.Text("session[%d] disconnected.", self.id)
+				self.isShutdown = true
+				continue
+			}
+
 			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			logger.Error(readErr.Error())
 			continue
 		}
 
-		if len(recvBuffer)+curReadSize >= PACKET_MAX_BUFFER {
+		if curReadSize <= 0 {
+			continue
+		}
+
+		if readSize+curReadSize >= PACKET_MAX_BUFFER {
 			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			logger.Error("RecvBuffer overflow!")
 			continue
@@ -115,7 +127,7 @@ func (self *PacketSession) startReceive() {
 			}
 		}
 
-		unmarshalErr := json.Unmarshal(recvBuffer, &recvPacket)
+		unmarshalErr := json.Unmarshal(recvBuffer[:readSize], &recvPacket)
 		if unmarshalErr != nil {
 			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			logger.Error(unmarshalErr.Error())
@@ -128,7 +140,8 @@ func (self *PacketSession) startReceive() {
 }
 
 func clearRecvData(InBuffer *[]byte, InPacket *MessagePacket, InReadSize *int, InPacketSize *int32, InMessageData *string, InIsHeaderComplete *bool) {
-	*InBuffer = (*InBuffer)[:0]
+	// *InBuffer = (*InBuffer)[:0]
+	*InBuffer = make([]byte, PACKET_MAX_BUFFER)
 	*InPacket = MessagePacket{0, ""}
 	*InReadSize = 0
 	*InPacketSize = 0
