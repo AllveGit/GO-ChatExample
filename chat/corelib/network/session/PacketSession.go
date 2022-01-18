@@ -6,6 +6,7 @@ import (
 	. "chat/corelib/network"
 	. "chat/types"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 )
@@ -48,12 +49,14 @@ func (self *PacketSession) Shutdown() {
 		disconnectErr := self.conn.Close()
 		if disconnectErr != nil {
 			logger.Error(disconnectErr.Error())
+		} else {
+			logger.Text("session[%d] shutdowned.", self.id)
 		}
 	}
 }
 
 func (self *PacketSession) startPacketEvent() {
-	for {
+	for !self.isShutdown {
 		select {
 		case sendPkt := <-self.sendChan:
 			sendBytes, marshalErr := json.Marshal(sendPkt)
@@ -64,7 +67,7 @@ func (self *PacketSession) startPacketEvent() {
 
 			self.conn.Write(sendBytes)
 		case recvPkt := <-self.recvChan:
-			logger.Text(recvPkt.Message)
+			fmt.Printf(recvPkt.Message)
 
 			if self.SessionManager != nil {
 				self.SessionManager.BroadCast(self.id, recvPkt)
@@ -74,6 +77,8 @@ func (self *PacketSession) startPacketEvent() {
 }
 
 func (self *PacketSession) startReceive() {
+
+	defer self.Shutdown()
 
 	recvBuffer := make([]byte, PACKET_MAX_BUFFER)
 	recvPacket := MessagePacket{0, ""}
@@ -88,12 +93,12 @@ func (self *PacketSession) startReceive() {
 		if readErr != nil {
 			if readErr == io.EOF {
 				logger.Text("session[%d] disconnected.", self.id)
-				self.isShutdown = true
-				continue
+			} else {
+				logger.Error(readErr.Error())
 			}
 
-			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
-			logger.Error(readErr.Error())
+			self.isShutdown = true
+			clearRecvData(&recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			continue
 		}
 
@@ -102,7 +107,7 @@ func (self *PacketSession) startReceive() {
 		}
 
 		if readSize+curReadSize >= PACKET_MAX_BUFFER {
-			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
+			clearRecvData(&recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			logger.Error("RecvBuffer overflow!")
 			continue
 		}
@@ -129,19 +134,17 @@ func (self *PacketSession) startReceive() {
 
 		unmarshalErr := json.Unmarshal(recvBuffer[:readSize], &recvPacket)
 		if unmarshalErr != nil {
-			clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
+			clearRecvData(&recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 			logger.Error(unmarshalErr.Error())
 			continue
 		}
 
 		self.recvChan <- recvPacket
-		clearRecvData(&recvBuffer, &recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
+		clearRecvData(&recvPacket, &readSize, &packetSize, &messageData, &isHeaderComplete)
 	}
 }
 
-func clearRecvData(InBuffer *[]byte, InPacket *MessagePacket, InReadSize *int, InPacketSize *int32, InMessageData *string, InIsHeaderComplete *bool) {
-	// *InBuffer = (*InBuffer)[:0]
-	*InBuffer = make([]byte, PACKET_MAX_BUFFER)
+func clearRecvData(InPacket *MessagePacket, InReadSize *int, InPacketSize *int32, InMessageData *string, InIsHeaderComplete *bool) {
 	*InPacket = MessagePacket{0, ""}
 	*InReadSize = 0
 	*InPacketSize = 0
